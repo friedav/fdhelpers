@@ -1,0 +1,112 @@
+---
+title: "Formatted list of authors"
+author: "Friederike David"
+date: "23 6 2020"
+output: word_document
+params:
+  input: "authors_affiliations.tsv"
+---
+
+<!-- Convert sorted tsv file with author names and affiliations -->
+<!-- to author list in word document for usage in a manuscript -->
+
+<!-- Assumptions: -->
+<!-- - rows are sorted by desired occurence of authors on manuscript -->
+<!-- - affiliation indices per author are sorted author-level affiliation ranking -->
+<!--   (not strictly numerical) -->
+
+
+## Assumptions
+
+- rows in input tsv are sorted by desired order of authors on manuscript
+- required columns:
+  - `Author name`
+  - `affiliation 1`, `affiliation 2`, ...
+- in output, affiliation indices per author are sorted by author-level 
+affiliation ranking (not strictly numerical) - i.e. John Doe^5,2^ instead of 
+John Doe^2,5^ possible
+
+
+## Processing steps
+
+- remove all superfluous whitespaces in author names and affiliations
+- exclude affiliation "C" (-> error in input?)
+- format any listed name initials as X.
+- consistently use USA (not US) as country code in affiliations
+- consistently use UK (not GB) as country code in affiliations
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+
+library(tidyverse)
+library(here)
+library(data.table)
+
+dat <- fread(here(params$input), encoding = 'UTF-8') %>% as_tibble() %>%
+  set_names(make.names(colnames(.))) %>%
+  select(author = Author.name, contains("affiliation.")) %>%
+  mutate_all(~ str_squish(.x)) %>%
+  mutate(author = str_replace_all(author, "\\b([[:alpha:]])\\b(?!\\.)", "\\1\\.")) %>%
+  mutate(author_rank = 1:nrow(.)) %>%
+  pivot_longer(cols = contains("affiliation."), 
+               names_to = "affil_rank_author",
+               values_to = "affil") %>%
+  mutate(affil_rank_author = as.integer(str_extract(affil_rank_author, "\\d+"))) %>%
+  filter(affil != "") %>%
+  filter(affil != "C") %>% 
+  mutate(affil = str_replace(affil, "\\bUSA?$", "USA"),
+         affil = str_replace(affil, "\\bGB$", "UK")) %>% 
+  mutate(affil_rank = as.numeric(factor(affil, levels = unique(affil))))
+```
+
+## List of similar affiliations (to look for errors)
+
+```{r}
+# unique affiliations in data
+uaffil <- unique(dat$affil)
+
+# fuzzy matching to other listed affiliations (only return imperfect matches)
+affilmatch <- lapply(seq_along(uaffil), function(i) {
+  agrep(uaffil[i], uaffil[-(1:i)], ignore.case = T, value = T)
+}) %>% 
+  set_names(uaffil) %>% 
+  .[sapply(., function(x) length(x) > 0)]
+```
+
+`r sapply(seq_along(affilmatch), function(i) {
+  paste0("- ", names(affilmatch)[i], "\n",
+         paste0("  - ", affilmatch[[i]], "\n", collapse = ""))
+}) %>% paste0(collapse = "")`
+
+
+## Authors
+
+```{r authors}
+# compose formatted string of authors
+authors <- dat %>%
+  group_by(author_rank, author) %>%
+  summarize(aff_ranks = paste0(affil_rank, collapse = ","),
+            string = paste0(unique(author), "^", aff_ranks, "^")) %>% 
+  ungroup() %>%
+  summarize(out = paste0(string, collapse = ", ")) %>% .$out
+```
+
+`r authors`  
+
+
+## Affiliations
+
+```{r affiliations}
+# compose formatted string of affiliations
+affiliations <- dat %>% 
+  select(affil, affil_rank) %>% 
+  filter(!duplicated(affil)) %>% 
+  summarize(out = paste0("^", affil_rank, "^", affil, ".", 
+                         collapse = " ")) %>% 
+  .$out
+```
+
+
+`r affiliations`
