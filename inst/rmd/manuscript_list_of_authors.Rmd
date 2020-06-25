@@ -1,7 +1,6 @@
 ---
 title: "Formatted list of authors"
-author: "Friederike David"
-date: "23 6 2020"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: word_document
 params:
   input: "authors_affiliations.tsv"
@@ -11,20 +10,17 @@ params:
 <!-- to author list in word document for usage in a manuscript -->
 
 <!-- Assumptions: -->
+<!-- - input file contains columns 'Author name' and 'affiliation 1', 'affiliation 2', ... -->
 <!-- - rows are sorted by desired occurence of authors on manuscript -->
-<!-- - affiliation indices per author are sorted author-level affiliation ranking -->
-<!--   (not strictly numerical) -->
 
 
 ## Assumptions
 
-- rows in input tsv are sorted by desired order of authors on manuscript
 - required columns:
   - `Author name`
   - `affiliation 1`, `affiliation 2`, ...
-- in output, affiliation indices per author are sorted by author-level 
-affiliation ranking (not strictly numerical) - i.e. John Doe^5,2^ instead of 
-John Doe^2,5^ possible
+- rows in input tsv are sorted by desired order of authors on manuscript
+- in output, affiliation indices per author are sorted numerically
 
 
 ## Processing steps
@@ -44,7 +40,7 @@ library(tidyverse)
 library(here)
 library(data.table)
 
-dat <- fread(here(params$input), encoding = 'UTF-8') %>% as_tibble() %>%
+dat <- fread(params$input, encoding = 'UTF-8') %>% as_tibble() %>%
   set_names(make.names(colnames(.))) %>%
   select(author = Author.name, contains("affiliation.")) %>%
   mutate_all(~ str_squish(.x)) %>%
@@ -87,6 +83,7 @@ affilmatch <- lapply(seq_along(uaffil), function(i) {
 # compose formatted string of authors
 authors <- dat %>%
   group_by(author_rank, author) %>%
+  arrange(affil_rank) %>% 
   summarize(aff_ranks = paste0(affil_rank, collapse = ","),
             string = paste0(unique(author), "^", aff_ranks, "^")) %>% 
   ungroup() %>%
